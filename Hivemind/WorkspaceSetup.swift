@@ -49,6 +49,18 @@ class WorkspaceSetup: ObservableObject {
         get { UserDefaults.shared.string(forKey: "hivemind.weeklySummariesPageId") ?? "" }
         set { objectWillChange.send(); UserDefaults.shared.set(newValue, forKey: "hivemind.weeklySummariesPageId") }
     }
+    var articlesDbId: String {
+        get { UserDefaults.shared.string(forKey: "hivemind.articlesDbId") ?? "" }
+        set { objectWillChange.send(); UserDefaults.shared.set(newValue, forKey: "hivemind.articlesDbId") }
+    }
+    var conceptsDbId: String {
+        get { UserDefaults.shared.string(forKey: "hivemind.conceptsDbId") ?? "" }
+        set { objectWillChange.send(); UserDefaults.shared.set(newValue, forKey: "hivemind.conceptsDbId") }
+    }
+    var knowledgeMapPageId: String {
+        get { UserDefaults.shared.string(forKey: "hivemind.knowledgeMapPageId") ?? "" }
+        set { objectWillChange.send(); UserDefaults.shared.set(newValue, forKey: "hivemind.knowledgeMapPageId") }
+    }
 
     // MARK: - Public
 
@@ -182,6 +194,8 @@ class WorkspaceSetup: ObservableObject {
                 try await notion.updateDatabaseProperties(databaseId: newId, properties: relationPatches)
             }
 
+            try await setupArticlesAndConcepts(parentPageId: parentPageId)
+
             update("Checking Weekly Summaries page…")
             if let existing = try await notion.findChildPage(parentPageId: parentPageId, title: "Weekly Summaries") {
                 weeklySummariesPageId = existing
@@ -208,6 +222,85 @@ class WorkspaceSetup: ObservableObject {
     }
 
     // MARK: - Private
+
+    // Creates the Concepts + Articles databases used by Noted's article ingestion,
+    // then links them: Articles → Concepts (dual relation) and Concepts → Concepts (related).
+    private func setupArticlesAndConcepts(parentPageId: String) async throws {
+        update("Checking Concepts database…")
+        if let existing = try await notion.findChildDatabase(parentPageId: parentPageId, title: "Concepts") {
+            conceptsDbId = existing
+            try? await notion.updateIcon(id: existing, emoji: "🧩", isDatabase: true)
+        } else {
+            update("Creating Concepts database…")
+            conceptsDbId = try await notion.createDatabase(
+                parentPageId: parentPageId, title: "Concepts", icon: "🧩",
+                properties: [
+                    "Name": ["title": [:]],
+                    "Summary": ["rich_text": [:]],
+                    "Topics": ["multi_select": [:]]
+                ]
+            )
+        }
+
+        update("Checking Articles database…")
+        if let existing = try await notion.findChildDatabase(parentPageId: parentPageId, title: "Articles") {
+            articlesDbId = existing
+            try? await notion.updateIcon(id: existing, emoji: "📚", isDatabase: true)
+        } else {
+            update("Creating Articles database…")
+            articlesDbId = try await notion.createDatabase(
+                parentPageId: parentPageId, title: "Articles", icon: "📚",
+                properties: [
+                    "Name": ["title": [:]],
+                    "URL": ["url": [:]],
+                    "Source": ["rich_text": [:]],
+                    "Author": ["rich_text": [:]],
+                    "Published": ["date": [:]],
+                    "Saved": ["date": [:]],
+                    "Read Time": ["number": [:]],
+                    "Progress": ["number": ["format": "percent"]],
+                    "Topics": ["multi_select": [:]],
+                    "Status": ["select": ["options": [
+                        ["name": "Processing", "color": "yellow"],
+                        ["name": "Ready", "color": "green"],
+                        ["name": "Failed", "color": "red"]
+                    ]]]
+                ]
+            )
+        }
+
+        // Ensure the Progress bar property exists on pre-existing Articles DBs too (idempotent).
+        try await notion.updateDatabaseProperties(databaseId: articlesDbId, properties: [
+            "Progress": ["number": ["format": "percent"]]
+        ])
+
+        // Relations are patched after both databases exist (Notion requires the targets first).
+        update("Linking Articles ↔ Concepts…")
+        try await notion.updateDatabaseProperties(databaseId: articlesDbId, properties: [
+            "Concepts": ["relation": [
+                "database_id": conceptsDbId, "type": "dual_property", "dual_property": [:]
+            ] as [String: Any]] as [String: Any]
+        ])
+        try await notion.updateDatabaseProperties(databaseId: conceptsDbId, properties: [
+            "Related": ["relation": [
+                "database_id": conceptsDbId, "type": "dual_property", "dual_property": [:]
+            ] as [String: Any]] as [String: Any]
+        ])
+
+        // Ensure the Topics property exists on pre-existing Concepts DBs too (idempotent).
+        try await notion.updateDatabaseProperties(databaseId: conceptsDbId, properties: [
+            "Topics": ["multi_select": [:]]
+        ])
+
+        update("Checking Knowledge Map page…")
+        if let existing = try await notion.findChildPage(parentPageId: parentPageId, title: "Knowledge Map") {
+            knowledgeMapPageId = existing
+            try? await notion.updateIcon(id: existing, emoji: "🗺️")
+        } else {
+            update("Creating Knowledge Map page…")
+            knowledgeMapPageId = try await notion.createPage(parentPageId: parentPageId, title: "Knowledge Map", icon: "🗺️")
+        }
+    }
 
 private func notesRelationProperties(projectsDbId: String, peopleDbId: String) -> [String: Any] {
         var props: [String: Any] = [:]

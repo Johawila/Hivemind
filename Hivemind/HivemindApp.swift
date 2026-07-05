@@ -18,6 +18,13 @@ struct HivemindApp: App {
     init() {
         _ = NotificationManager.shared
 
+        // One-time migration: move the Anthropic key into the shared App Group
+        // so Noted can read it too. Safe to run on every launch.
+        if (UserDefaults.shared.string(forKey: "hivemind.anthropicApiKey") ?? "").isEmpty,
+           let legacy = UserDefaults.standard.string(forKey: "hivemind.anthropicApiKey"), !legacy.isEmpty {
+            UserDefaults.shared.set(legacy, forKey: "hivemind.anthropicApiKey")
+        }
+
         Task {
             guard WorkspaceSetup.shared.isComplete else {
                 await MainActor.run {

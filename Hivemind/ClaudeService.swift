@@ -17,7 +17,12 @@ class ClaudeService {
     private let baseURL = "https://api.anthropic.com/v1"
     private let model = "claude-haiku-4-5-20251001"
 
-    var apiKey: String { UserDefaults.standard.string(forKey: "hivemind.anthropicApiKey") ?? "" }
+    // Stored in the shared App Group so Noted can use the same key. Falls back to the
+    // legacy standard-defaults value until the one-time migration in HivemindApp runs.
+    var apiKey: String {
+        let shared = UserDefaults.shared.string(forKey: "hivemind.anthropicApiKey") ?? ""
+        return shared.isEmpty ? (UserDefaults.standard.string(forKey: "hivemind.anthropicApiKey") ?? "") : shared
+    }
 
     struct LinkSuggestion: Decodable {
         let noteId: String

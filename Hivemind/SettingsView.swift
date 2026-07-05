@@ -7,7 +7,7 @@ struct SettingsView: View {
     @ObservedObject private var setup = WorkspaceSetup.shared
     @State private var regeneratingWeekly = false
 
-    @AppStorage("hivemind.anthropicApiKey") private var anthropicApiKey = ""
+    @AppStorage("hivemind.anthropicApiKey", store: .shared) private var anthropicApiKey = ""
 
     @AppStorage("hivemind.morningNudgeEnabled") private var morningEnabled = false
     @AppStorage("hivemind.eveningNudgeEnabled") private var eveningEnabled = false
